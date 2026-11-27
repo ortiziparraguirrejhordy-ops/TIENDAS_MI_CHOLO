@@ -19,7 +19,7 @@ from productos import (
 
 from algoritmos import (
     busqueda_secuencial,
-    ordenamiento_burbuja
+    ordenamiento_adaptativo
 )
 
 from ventas import (
@@ -76,6 +76,7 @@ class Aplicacion(tk.Tk):
 
         self.carrito = {}
         self.botones_menu = {}
+        self.busqueda_pendiente = None
 
         self.configurar_estilos()
         self.crear_estructura()
@@ -267,6 +268,8 @@ class Aplicacion(tk.Tk):
 
 
     def limpiar_contenido(self):
+
+        self.cancelar_busqueda_pendiente()
 
         for elemento in self.contenido.winfo_children():
             elemento.destroy()
@@ -684,116 +687,115 @@ class Aplicacion(tk.Tk):
             (90, 180, 130, 90, 65, 90)
         )
 
-        entrada.bind(
-            "<KeyRelease>",
-            lambda evento:
-                self.actualizar_tabla_productos()
-        )
-
-        selector.bind(
-            "<<ComboboxSelected>>",
-            lambda evento:
-                self.actualizar_tabla_productos()
-        )
-
-        self.tabla_productos.bind(
-            "<Double-1>",
-            lambda evento: self.editar_producto()
-        )
-
+        self.pagina_productos = 0
+        self.productos_filtrados = []
+        self.metricas_productos = "Sin ordenar"
+        pie = tk.Frame(self.contenido, bg=FONDO)
+        pie.pack(fill="x", pady=4)
+        self.anterior_productos = self.boton(
+            pie, "Anterior", lambda: self.cambiar_pagina_productos(-1))
+        self.anterior_productos.pack(side="left")
+        self.siguiente_productos = self.boton(
+            pie, "Siguiente", lambda: self.cambiar_pagina_productos(1))
+        self.siguiente_productos.pack(side="right")
+        self.etiqueta_pagina = tk.Label(pie, bg=FONDO, fg=TEXTO)
+        self.etiqueta_pagina.pack(side="left", expand=True)
+        self.busqueda_producto.trace_add("write", self.programar_busqueda_productos)
+        selector.bind("<<ComboboxSelected>>", lambda evento: self.actualizar_tabla_productos())
+        self.tabla_productos.bind("<Double-1>", lambda evento: self.editar_producto())
         self.actualizar_tabla_productos()
 
+    def cancelar_busqueda_pendiente(self):
+        if self.busqueda_pendiente is not None:
+            self.after_cancel(self.busqueda_pendiente)
+            self.busqueda_pendiente = None
+
+    def programar_busqueda_productos(self, *_):
+        self.cancelar_busqueda_pendiente()
+        self.busqueda_pendiente = self.after(300, self.actualizar_tabla_productos)
 
     def actualizar_tabla_productos(self):
-
+        self.cancelar_busqueda_pendiente()
+        self.pagina_productos = 0
         try:
-
-            productos = listar_productos(
-                self.ver_inactivos.get()
-            )
-
+            productos = listar_productos(self.ver_inactivos.get())
             termino = self.busqueda_producto.get().strip()
-
             if termino:
-
-                productos = busqueda_secuencial(
-                    productos,
-                    termino
-                )
-
+                productos = busqueda_secuencial(productos, termino)
             opciones = {
                 "Nombre": ("nombre", False),
                 "Codigo": ("codigo", False),
                 "Categoria": ("categoria", False),
-                "Precio ascendente": (
-                    "precio_centavos", False
-                ),
-                "Precio descendente": (
-                    "precio_centavos", True
-                ),
+                "Precio ascendente": ("precio_centavos", False),
+                "Precio descendente": ("precio_centavos", True),
                 "Stock": ("stock", False)
             }
-
             orden = self.orden_producto.get()
-
+            self.metricas_productos = "Sin ordenar"
             if orden in opciones:
-
                 campo, descendente = opciones[orden]
-
-                productos = ordenamiento_burbuja(
-                    productos,
-                    campo,
-                    descendente
+                resultado = ordenamiento_adaptativo(productos, campo, descendente)
+                productos = resultado["productos"]
+                self.metricas_productos = (
+                    f"{resultado['algoritmo']} | {resultado['tiempo']:.6f} s"
                 )
-
-            self.vaciar_tabla(self.tabla_productos)
-
-            for i, producto in enumerate(productos):
-
-                estado = (
-                    "Activo"
-                    if producto["activo"]
-                    else "Inactivo"
-                )
-
-                etiqueta = "par" if i % 2 == 0 else "impar"
-
-                if not producto["activo"]:
-                    etiqueta = "inactivo"
-
-                elif producto["stock"] == 0:
-                    etiqueta = "agotado"
-
-                elif producto["stock"] <= STOCK_MINIMO:
-                    etiqueta = "bajo"
-
-                self.tabla_productos.insert(
-                    "",
-                    "end",
-                    values=(
-                        producto["codigo"],
-                        producto["nombre"],
-                        producto["categoria"],
-                        formatear_dinero(
-                            producto["precio_centavos"]
-                        ),
-                        producto["stock"],
-                        estado
-                    ),
-                    tags=(etiqueta,)
-                )
-
-            self.contador_productos.configure(
-                text=f"Productos encontrados: {len(productos)}"
-            )
-
+            self.productos_filtrados = productos
+            self.mostrar_pagina_productos()
         except ERRORES as error:
+            self.productos_filtrados = []
+            self.metricas_productos = "Sin ordenar"
+            self.mostrar_pagina_productos()
+            self.contador_productos.configure(text=f"Aviso: {error}")
 
-            self.vaciar_tabla(self.tabla_productos)
+    def cambiar_pagina_productos(self, paso):
+        total = max(1, (len(self.productos_filtrados) + 49) // 50)
+        self.pagina_productos = max(0, min(total - 1, self.pagina_productos + paso))
+        self.mostrar_pagina_productos()
 
-            self.contador_productos.configure(
-                text=f"Aviso: {error}"
+    def mostrar_pagina_productos(self):
+        productos = self.productos_filtrados
+        total = max(1, (len(productos) + 49) // 50)
+        inicio = self.pagina_productos * 50
+        self.vaciar_tabla(self.tabla_productos)
+        for i, producto in enumerate(productos[inicio:inicio + 50]):
+            estado = (
+                "Activo"
+                if producto["activo"]
+                else "Inactivo"
             )
+
+            etiqueta = "par" if i % 2 == 0 else "impar"
+
+            if not producto["activo"]:
+                etiqueta = "inactivo"
+
+            elif producto["stock"] == 0:
+                etiqueta = "agotado"
+
+            elif producto["stock"] <= STOCK_MINIMO:
+                etiqueta = "bajo"
+
+            self.tabla_productos.insert(
+                "",
+                "end",
+                values=(
+                    producto["codigo"],
+                    producto["nombre"],
+                    producto["categoria"],
+                    formatear_dinero(
+                        producto["precio_centavos"]
+                    ),
+                    producto["stock"],
+                    estado
+                ),
+                tags=(etiqueta,)
+            )
+
+        self.contador_productos.configure(
+            text=f"Productos encontrados: {len(productos)} | {self.metricas_productos}")
+        self.etiqueta_pagina.configure(text=f"Pagina {self.pagina_productos + 1} de {total}")
+        self.anterior_productos.configure(state="normal" if self.pagina_productos > 0 else "disabled")
+        self.siguiente_productos.configure(state="normal" if self.pagina_productos + 1 < total else "disabled")
 
 
     def formulario_producto(self, producto=None):
