@@ -1,4 +1,5 @@
 
+import sys
 import sqlite3
 from pathlib import Path
 from contextlib import closing
@@ -8,7 +9,10 @@ from contextlib import closing
 # UBICACION DE LAS CARPETAS
 # ==========================================
 
-RUTA_BASE = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    RUTA_BASE = Path(sys.executable).resolve().parent
+else:
+    RUTA_BASE = Path(__file__).resolve().parent
 
 CARPETA_DATOS = RUTA_BASE / "datos"
 CARPETA_BACKUPS = RUTA_BASE / "backups"

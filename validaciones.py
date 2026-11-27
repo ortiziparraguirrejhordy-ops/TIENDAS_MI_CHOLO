@@ -12,19 +12,16 @@ MAX_STOCK = 100000
 
 
 def validar_codigo(codigo):
-    """Valida el codigo de un producto."""
-
     codigo = str(codigo).strip().upper()
 
     if not 1 <= len(codigo) <= MAX_CODIGO:
-        raise ValueError(
-            "El codigo debe tener entre 1 y 20 caracteres."
-        )
+        raise ValueError("El codigo debe tener entre 1 y 20 caracteres.")
 
     if not re.fullmatch(r"[A-Z0-9-]+", codigo):
-        raise ValueError(
-            "El codigo solo admite letras, numeros y guiones."
-        )
+        raise ValueError("Solo se permiten letras, numeros y guiones.")
+
+    if not re.search(r"[0-9]", codigo):
+        raise ValueError("El codigo debe contener al menos un numero.")
 
     return codigo
 
