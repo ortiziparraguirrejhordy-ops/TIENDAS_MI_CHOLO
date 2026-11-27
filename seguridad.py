@@ -24,7 +24,7 @@ def verificar_conexion(conexion):
         raise ValueError('La base de datos presenta problemas de integridad.')
     if conexion.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise ValueError('Existen relaciones invalidas entre registros.')
-    tablas = {'productos', 'ventas', 'detalle_venta'}
+    tablas = {'productos', 'ventas', 'detalle_venta', 'usuarios', 'auditoria'}
     existentes = {fila[0] for fila in conexion.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not tablas.issubset(existentes):
         raise ValueError('La copia no contiene las tablas requeridas.')

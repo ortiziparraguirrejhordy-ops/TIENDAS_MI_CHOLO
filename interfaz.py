@@ -46,6 +46,7 @@ from usuarios import (autenticar, verificar_permiso, necesita_administrador,
                       crear_primer_administrador, crear_usuario, listar_usuarios,
                       cambiar_estado, cambiar_password)
 from auditoria import registrar_evento, listar_auditoria
+from seguridad import crear_backup, listar_backups, verificar_integridad, backup_automatico
 from validaciones import formatear_dinero
 from reportes import (
     exportar_productos, exportar_ventas, exportar_detalle_ventas,
@@ -143,9 +144,12 @@ class Aplicacion(tk.Tk):
             self.geometry("1200x750")
             self.crear_estructura()
             self.navegar("Inicio", self.mostrar_inicio)
+            if self.es_admin():
+                try:
+                    backup_automatico()
+                except ERRORES as error:
+                    messagebox.showwarning("Respaldo diario", str(error), parent=self)
         self.boton(panel, "Crear administrador" if inicial else "Ingresar", ingresar).pack(fill="x", pady=(15, 0))
-        if not inicial:
-            self.boton(panel, "Crear cuenta", lambda: self.formulario_cuenta(True), LATERAL).pack(fill="x", pady=(8, 0))
         for entrada in campos.values():
             entrada.bind("<Return>", ingresar)
         campos["Usuario"].focus_set()
@@ -2247,77 +2251,39 @@ class Aplicacion(tk.Tk):
     def mostrar_seguridad(self):
         if not self.permiso(True):
             return
-
         self.limpiar_contenido()
+        self.encabezado("Seguridad del sistema", "Respaldos privados e integridad de SQLite")
+        barra = tk.Frame(self.contenido, bg=FONDO)
+        barra.pack(fill="x", pady=8)
+        for texto, accion in (("Crear respaldo", "manual"), ("Respaldo diario", "diario"),
+                              ("Verificar integridad", "integridad")):
+            self.boton(barra, texto, lambda a=accion: self.operacion_seguridad(a)).pack(side="left", padx=4)
+        self.boton(barra, "Actualizar", self.mostrar_seguridad, LATERAL).pack(side="left", padx=4)
+        tk.Label(self.contenido, text="Copias disponibles (solo administrador)", bg=FONDO,
+                 fg=TEXTO, font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=8)
+        tabla = self.crear_tabla(("archivo", "tamano"), ("Archivo", "Tamano (KB)"), (480, 150))
+        for i, ruta in enumerate(listar_backups()):
+            self.insertar_fila(tabla, (ruta.name, f"{ruta.stat().st_size / 1024:.1f}"), i)
+        tk.Label(self.contenido, text="Restauracion deshabilitada hasta verificar el procedimiento de recuperacion y cierre de sesiones.",
+                 bg=FONDO, fg=NARANJA, wraplength=750, justify="left").pack(anchor="w", pady=8)
 
-        self.encabezado(
-            "Seguridad del sistema",
-            "Proteccion de datos e integridad de operaciones"
-        )
-
-        protecciones = [
-            (
-                "Validacion de entradas",
-                "Control de codigos, nombres, precios y cantidades."
-            ),
-            (
-                "Base de datos SQLite",
-                "Almacenamiento permanente de informacion."
-            ),
-            (
-                "Consultas parametrizadas",
-                "Separacion de instrucciones SQL y valores ingresados."
-            ),
-            (
-                "Transacciones",
-                "Registro de ventas y actualizacion de stock."
-            ),
-            (
-                "Eliminacion logica",
-                "Conservacion de productos y relaciones historicas."
-            ),
-            (
-                "Control de errores",
-                "Manejo de excepciones y mensajes informativos."
-            )
-        ]
-
-        for titulo, descripcion in protecciones:
-
-            marco = tk.Frame(
-                self.contenido,
-                bg=BLANCO,
-                padx=15,
-                pady=10
-            )
-
-            marco.pack(fill="x", pady=3)
-
-            tk.Label(
-                marco,
-                text=titulo,
-                bg=BLANCO,
-                fg=VERDE,
-                font=("Segoe UI", 12, "bold")
-            ).pack(anchor="w")
-
-            tk.Label(
-                marco,
-                text=descripcion,
-                bg=BLANCO,
-                fg=GRIS,
-                font=("Segoe UI", 10),
-                wraplength=650,
-                justify="left"
-            ).pack(anchor="w")
-
-        tk.Label(
-            self.contenido,
-            text="Copias de seguridad: modulo pendiente de integracion.",
-            bg=FONDO,
-            fg=NARANJA,
-            font=("Segoe UI", 10)
-        ).pack(anchor="w", pady=10)
+    def operacion_seguridad(self, accion):
+        if not self.permiso(True):
+            return
+        try:
+            if accion == "integridad":
+                verificar_integridad()
+                descripcion = "Integridad de SQLite verificada"
+            elif accion in ("manual", "diario"):
+                ruta = crear_backup() if accion == "manual" else backup_automatico()
+                descripcion = f"Respaldo disponible: {ruta.name}"
+            else:
+                raise ValueError("Operacion invalida.")
+            registrar_evento(self.sesion["id_usuario"], "VERIFICAR" if accion == "integridad" else "RESPALDO", "Seguridad", descripcion)
+            messagebox.showinfo("Seguridad", descripcion, parent=self)
+            self.mostrar_seguridad()
+        except ERRORES as error:
+            messagebox.showerror("Seguridad", str(error), parent=self)
 
 
     # ======================================
