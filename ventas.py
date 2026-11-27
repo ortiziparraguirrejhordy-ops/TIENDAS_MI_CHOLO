@@ -1,5 +1,7 @@
 
 import sqlite3
+from usuarios import _autorizar
+from auditoria import registrar_auditoria
 from datetime import datetime
 from contextlib import closing
 
@@ -119,7 +121,7 @@ def mostrar_carrito(carrito):
     )
 
 
-def registrar_venta(carrito, metodo_pago):
+def registrar_venta(carrito, metodo_pago, id_usuario=None):
     """Registra una venta y actualiza el inventario."""
 
     if not carrito:
@@ -137,6 +139,7 @@ def registrar_venta(carrito, metodo_pago):
         with conexion:
 
             conexion.execute("BEGIN IMMEDIATE")
+            _autorizar(conexion, id_usuario, ("Administrador", "Vendedor"))
 
             detalles = []
             total = 0
@@ -236,6 +239,8 @@ def registrar_venta(carrito, metodo_pago):
                     raise ValueError(
                         "No se pudo actualizar el inventario."
                     )
+
+            registrar_auditoria(conexion, id_usuario, "VENTA", "Ventas", f"Venta {id_venta}", nuevos={"id_venta": id_venta, "total_centavos": total, "metodo_pago": metodo_pago})
 
     carrito.clear()
 

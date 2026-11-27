@@ -918,6 +918,12 @@ class Aplicacion(tk.Tk):
         self.cancelar_busqueda_pendiente()
         self.busqueda_pendiente = self.after(300, self.actualizar_tabla_productos)
 
+    def auditar_busqueda(self, modulo, termino):
+        clave = (self.sesion["id_usuario"], modulo, termino.casefold())
+        if getattr(self, "ultima_busqueda_auditada", None) != clave:
+            registrar_evento(clave[0], "BUSCAR", modulo, f"Busqueda: {termino}")
+            self.ultima_busqueda_auditada = clave
+
     def actualizar_tabla_productos(self):
         self.cancelar_busqueda_pendiente()
         self.pagina_productos = 0
@@ -926,6 +932,7 @@ class Aplicacion(tk.Tk):
             termino = self.busqueda_producto.get().strip()
             if termino:
                 productos = busqueda_secuencial(productos, termino)
+                self.auditar_busqueda("Productos", termino)
             opciones = {
                 "Nombre": ("nombre", False),
                 "Codigo": ("codigo", False),
@@ -1141,7 +1148,8 @@ class Aplicacion(tk.Tk):
                         datos["nombre"],
                         datos["categoria"],
                         datos["precio"],
-                        datos["stock"]
+                        datos["stock"],
+                        id_usuario=self.sesion["id_usuario"]
                     )
 
                 else:
@@ -1151,7 +1159,8 @@ class Aplicacion(tk.Tk):
                         datos["nombre"],
                         datos["categoria"],
                         datos["precio"],
-                        datos["stock"]
+                        datos["stock"],
+                        id_usuario=self.sesion["id_usuario"]
                     )
 
                 messagebox.showinfo(
@@ -1236,7 +1245,7 @@ class Aplicacion(tk.Tk):
 
         try:
 
-            eliminar_producto(codigo)
+            eliminar_producto(codigo, self.sesion["id_usuario"])
 
             self.actualizar_tabla_productos()
 
@@ -1263,7 +1272,7 @@ class Aplicacion(tk.Tk):
 
         try:
 
-            restaurar_producto(valores[0])
+            restaurar_producto(valores[0], self.sesion["id_usuario"])
 
             self.actualizar_tabla_productos()
 
@@ -1457,6 +1466,7 @@ class Aplicacion(tk.Tk):
                     productos,
                     termino
                 )
+                self.auditar_busqueda("Ventas", termino)
 
             self.vaciar_tabla(self.tabla_catalogo)
 
@@ -1615,7 +1625,8 @@ class Aplicacion(tk.Tk):
 
             id_venta = registrar_venta(
                 self.carrito,
-                pago
+                pago,
+                id_usuario=self.sesion["id_usuario"]
             )
 
         except ERRORES as error:

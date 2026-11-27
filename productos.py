@@ -1,5 +1,7 @@
 
 import sqlite3
+from usuarios import _autorizar
+from auditoria import registrar_auditoria
 from contextlib import closing
 
 from base_datos import conectar, inicializar_base_datos
@@ -41,7 +43,7 @@ def obtener_producto(codigo):
         return dict(producto)
 
 
-def crear_producto(codigo, nombre, categoria, precio, stock):
+def crear_producto(codigo, nombre, categoria, precio, stock, id_usuario=None):
     """Registra un nuevo producto en la base de datos."""
 
     codigo = validar_codigo(codigo)
@@ -55,8 +57,13 @@ def crear_producto(codigo, nombre, categoria, precio, stock):
         with closing(conectar()) as conexion:
             with conexion:
 
+                conexion.execute("BEGIN IMMEDIATE")
+                _autorizar(conexion, id_usuario, ('Administrador',))
+                previo = consultar_producto(conexion, codigo)
                 cursor = insertar_producto(conexion, codigo, nombre, categoria, precio, stock)
 
+                posterior = consultar_producto(conexion, codigo)
+                registrar_auditoria(conexion, id_usuario, "INSERTAR", "Productos", f"Producto {codigo}", anteriores=dict(previo) if previo else None, nuevos=dict(posterior))
                 return cursor.lastrowid
 
     except sqlite3.IntegrityError as error:
@@ -72,7 +79,8 @@ def modificar_producto(
     nombre,
     categoria,
     precio,
-    stock
+    stock,
+    id_usuario=None
 ):
     """Actualiza los datos de un producto activo."""
 
@@ -88,6 +96,9 @@ def modificar_producto(
         with closing(conectar()) as conexion:
             with conexion:
 
+                conexion.execute("BEGIN IMMEDIATE")
+                _autorizar(conexion, id_usuario, ('Administrador',))
+                previo = consultar_producto(conexion, codigo_actual)
                 cursor = actualizar_producto(conexion, codigo_actual, codigo_nuevo, nombre, categoria, precio, stock)
 
                 if cursor.rowcount == 0:
@@ -95,6 +106,8 @@ def modificar_producto(
                         "El producto no existe o esta inactivo."
                     )
 
+                posterior = consultar_producto(conexion, codigo_nuevo)
+                registrar_auditoria(conexion, id_usuario, "MODIFICAR", "Productos", f"Producto {codigo_nuevo}", anteriores=dict(previo) if previo else None, nuevos=dict(posterior))
                 return True
 
     except sqlite3.IntegrityError as error:
@@ -104,7 +117,7 @@ def modificar_producto(
         ) from error
 
 
-def eliminar_producto(codigo):
+def eliminar_producto(codigo, id_usuario=None):
     """Desactiva un producto sin borrar su historial."""
 
     codigo = validar_codigo(codigo)
@@ -112,6 +125,9 @@ def eliminar_producto(codigo):
     with closing(conectar()) as conexion:
         with conexion:
 
+            conexion.execute("BEGIN IMMEDIATE")
+            _autorizar(conexion, id_usuario, ('Administrador',))
+            previo = consultar_producto(conexion, codigo)
             cursor = actualizar_estado_producto(conexion, codigo, 0)
 
             if cursor.rowcount == 0:
@@ -119,10 +135,12 @@ def eliminar_producto(codigo):
                     "El producto no existe o ya esta eliminado."
                 )
 
+            posterior = consultar_producto(conexion, codigo)
+            registrar_auditoria(conexion, id_usuario, "ELIMINAR", "Productos", f"Producto {codigo}", anteriores=dict(previo) if previo else None, nuevos=dict(posterior))
             return True
 
 
-def restaurar_producto(codigo):
+def restaurar_producto(codigo, id_usuario=None):
     """Recupera un producto previamente desactivado."""
 
     codigo = validar_codigo(codigo)
@@ -130,6 +148,9 @@ def restaurar_producto(codigo):
     with closing(conectar()) as conexion:
         with conexion:
 
+            conexion.execute("BEGIN IMMEDIATE")
+            _autorizar(conexion, id_usuario, ('Administrador',))
+            previo = consultar_producto(conexion, codigo)
             cursor = actualizar_estado_producto(conexion, codigo, 1)
 
             if cursor.rowcount == 0:
@@ -137,6 +158,8 @@ def restaurar_producto(codigo):
                     "El producto no existe o ya esta activo."
                 )
 
+            posterior = consultar_producto(conexion, codigo)
+            registrar_auditoria(conexion, id_usuario, "RESTAURAR", "Productos", f"Producto {codigo}", anteriores=dict(previo) if previo else None, nuevos=dict(posterior))
             return True
 
 
