@@ -1,0 +1,31 @@
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Entornos virtuales
+venv/
+.venv/
+
+# Bases de datos
+datos/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Copias de seguridad y reportes
+backups/
+reportes/
+
+# Archivos de configuración
+.vscode/
+.env
+
+# Archivos ejecutables generados
+build/
+dist/
+*.spec
+
+# Registros de errores
+*.log
