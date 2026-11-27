@@ -3,6 +3,8 @@ import sqlite3
 from contextlib import closing
 
 from base_datos import conectar, inicializar_base_datos
+from repositorios import (consultar_productos, consultar_producto, insertar_producto,
+                          actualizar_producto, actualizar_estado_producto)
 
 from validaciones import (
     validar_codigo,
@@ -19,14 +21,7 @@ def listar_productos(incluir_inactivos=False):
 
     with closing(conectar()) as conexion:
 
-        consulta = "SELECT * FROM productos"
-
-        if not incluir_inactivos:
-            consulta += " WHERE activo = 1"
-
-        consulta += " ORDER BY id_producto"
-
-        registros = conexion.execute(consulta).fetchall()
+        registros = consultar_productos(conexion, incluir_inactivos)
 
         return [dict(registro) for registro in registros]
 
@@ -38,10 +33,7 @@ def obtener_producto(codigo):
 
     with closing(conectar()) as conexion:
 
-        producto = conexion.execute(
-            "SELECT * FROM productos WHERE codigo = ?",
-            (codigo,)
-        ).fetchone()
+        producto = consultar_producto(conexion, codigo)
 
         if producto is None:
             raise ValueError("El producto no existe.")
@@ -63,22 +55,7 @@ def crear_producto(codigo, nombre, categoria, precio, stock):
         with closing(conectar()) as conexion:
             with conexion:
 
-                cursor = conexion.execute("""
-                    INSERT INTO productos (
-                        codigo,
-                        nombre,
-                        categoria,
-                        precio_centavos,
-                        stock
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    codigo,
-                    nombre,
-                    categoria,
-                    precio,
-                    stock
-                ))
+                cursor = insertar_producto(conexion, codigo, nombre, categoria, precio, stock)
 
                 return cursor.lastrowid
 
@@ -111,23 +88,7 @@ def modificar_producto(
         with closing(conectar()) as conexion:
             with conexion:
 
-                cursor = conexion.execute("""
-                    UPDATE productos
-                    SET codigo = ?,
-                        nombre = ?,
-                        categoria = ?,
-                        precio_centavos = ?,
-                        stock = ?
-                    WHERE codigo = ?
-                    AND activo = 1
-                """, (
-                    codigo_nuevo,
-                    nombre,
-                    categoria,
-                    precio,
-                    stock,
-                    codigo_actual
-                ))
+                cursor = actualizar_producto(conexion, codigo_actual, codigo_nuevo, nombre, categoria, precio, stock)
 
                 if cursor.rowcount == 0:
                     raise ValueError(
@@ -151,12 +112,7 @@ def eliminar_producto(codigo):
     with closing(conectar()) as conexion:
         with conexion:
 
-            cursor = conexion.execute("""
-                UPDATE productos
-                SET activo = 0
-                WHERE codigo = ?
-                AND activo = 1
-            """, (codigo,))
+            cursor = actualizar_estado_producto(conexion, codigo, 0)
 
             if cursor.rowcount == 0:
                 raise ValueError(
@@ -174,12 +130,7 @@ def restaurar_producto(codigo):
     with closing(conectar()) as conexion:
         with conexion:
 
-            cursor = conexion.execute("""
-                UPDATE productos
-                SET activo = 1
-                WHERE codigo = ?
-                AND activo = 0
-            """, (codigo,))
+            cursor = actualizar_estado_producto(conexion, codigo, 1)
 
             if cursor.rowcount == 0:
                 raise ValueError(
