@@ -4461,7 +4461,7 @@ FUENTES['reportes'] = (
     '            delimiter=";"\n'
     '        )\n'
     '\n'
-    '        escritor.writerow(encabezados)\n'
+    '        escritor.writerow([proteger_celda(valor) for valor in encabezados])\n'
     '\n'
     '        for fila in filas:\n'
     '\n'
