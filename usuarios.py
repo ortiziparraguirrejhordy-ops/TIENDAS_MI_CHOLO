@@ -27,8 +27,8 @@ def validar_usuario(usuario):
 
 
 def validar_password(password):
-    if not isinstance(password, str) or not 12 <= len(password) <= 128:
-        raise ValueError('La contrasena debe tener entre 12 y 128 caracteres.')
+    if not isinstance(password, str) or not 6 <= len(password) <= 128:
+        raise ValueError('La contrasena debe tener entre 6 y 128 caracteres.')
     if not password.strip():
         raise ValueError('La contrasena no puede estar vacia.')
     return password
@@ -143,7 +143,7 @@ def cambiar_password(id_usuario, actual, nueva):
 
 
 def pedir_password():
-    password = getpass('Contrasena nueva (minimo 12 caracteres): ')
+    password = getpass('Contrasena nueva (minimo 6 caracteres): ')
     if password != getpass('Repita la contrasena: '):
         raise ValueError('Las contrasenas no coinciden.')
     return validar_password(password)
