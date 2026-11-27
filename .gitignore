@@ -29,3 +29,4 @@ dist/
 
 # Registros de errores
 *.log
+*.zip
