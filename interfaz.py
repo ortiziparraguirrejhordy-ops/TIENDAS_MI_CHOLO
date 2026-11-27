@@ -2,11 +2,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
+import os
+import sys
+import subprocess
 
 from datetime import date
 from decimal import Decimal
 
-from base_datos import inicializar_base_datos
+from base_datos import inicializar_base_datos, CARPETA_REPORTES
 
 from productos import (
     listar_productos,
@@ -40,6 +43,10 @@ from inventario import (
 )
 
 from validaciones import formatear_dinero
+from reportes import (
+    exportar_productos, exportar_ventas, exportar_detalle_ventas,
+    exportar_inventario, exportar_ingresos, exportar_todo
+)
 
 
 # ==========================================
@@ -1875,6 +1882,27 @@ class Aplicacion(tk.Tk):
             "Resumen de ingresos y rendimiento comercial"
         )
 
+        exportaciones = tk.Frame(self.contenido, bg=FONDO)
+        exportaciones.pack(fill="x", pady=4)
+        opciones = [
+            ("Productos", exportar_productos),
+            ("Ventas", exportar_ventas),
+            ("Detalle de ventas", exportar_detalle_ventas),
+            ("Inventario", exportar_inventario),
+            ("Ingresos", exportar_ingresos),
+            ("Exportar todo", exportar_todo)
+        ]
+        for i, (nombre, funcion) in enumerate(opciones):
+            self.boton(
+                exportaciones, nombre,
+                lambda f=funcion: self.generar_reporte_csv(f),
+                VERDE if nombre == "Exportar todo" else AZUL
+            ).grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
+        for columna in range(3):
+            exportaciones.columnconfigure(columna, weight=1)
+        self.boton(self.contenido, "Abrir carpeta de reportes",
+                   self.abrir_carpeta_reportes, GRIS).pack(anchor="w", pady=3)
+
         ingresos = obtener_ingresos()
 
         fila = tk.Frame(self.contenido, bg=FONDO)
@@ -1964,6 +1992,28 @@ class Aplicacion(tk.Tk):
                 ),
                 i
             )
+
+
+    def generar_reporte_csv(self, funcion):
+        try:
+            resultado = funcion()
+            archivos = resultado if isinstance(resultado, list) else [resultado]
+            mensaje = "\n".join(archivo.name for archivo in archivos)
+            messagebox.showinfo("Reportes generados", mensaje, parent=self)
+        except ERRORES as error:
+            messagebox.showerror("Error de exportacion", str(error), parent=self)
+
+    def abrir_carpeta_reportes(self):
+        try:
+            CARPETA_REPORTES.mkdir(parents=True, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(str(CARPETA_REPORTES))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(CARPETA_REPORTES)])
+            else:
+                subprocess.Popen(["xdg-open", str(CARPETA_REPORTES)])
+        except OSError as error:
+            messagebox.showerror("No se pudo abrir la carpeta", str(error), parent=self)
 
 
     # ======================================
