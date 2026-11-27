@@ -1,4 +1,5 @@
 """Autenticacion y administracion de cuentas de Tiendas Mi Cholo."""
+import repositorios as repo
 import hashlib
 import secrets
 import hmac
@@ -52,10 +53,7 @@ def _insertar(conexion, usuario, nombre, password, rol):
         raise ValueError('Rol invalido.')
     hash_password, salt = preparar_password(password)
     try:
-        cursor = conexion.execute('''INSERT INTO usuarios
-            (usuario, nombre_completo, password_hash, salt, iteraciones, rol, fecha_creacion)
-            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (usuario, nombre, hash_password, salt, ITERACIONES, rol, fecha_actual()))
+        cursor = repo.insertar_usuario(conexion, (usuario, nombre, hash_password, salt, ITERACIONES, rol, fecha_actual()))
     except sqlite3.IntegrityError as error:
         raise ValueError('Usuario duplicado o datos invalidos.') from error
     return cursor.lastrowid
@@ -63,13 +61,13 @@ def _insertar(conexion, usuario, nombre, password, rol):
 
 def necesita_administrador():
     with closing(conectar()) as conexion:
-        return conexion.execute('SELECT COUNT(*) FROM usuarios').fetchone()[0] == 0
+        return repo.contar_usuarios(conexion).fetchone()[0] == 0
 
 
 def crear_primer_administrador(usuario, nombre, password):
     with closing(conectar()) as conexion, conexion:
-        conexion.execute('BEGIN IMMEDIATE')
-        if conexion.execute('SELECT COUNT(*) FROM usuarios').fetchone()[0]:
+        repo.iniciar_transaccion(conexion)
+        if repo.contar_usuarios(conexion).fetchone()[0]:
             raise ValueError('La configuracion inicial ya fue realizada.')
         return _insertar(conexion, usuario, nombre, password, 'Administrador')
 
@@ -81,21 +79,20 @@ def autenticar(usuario, password):
     except ValueError:
         raise ValueError('Credenciales incorrectas.') from None
     with closing(conectar()) as conexion, conexion:
-        fila = conexion.execute('SELECT * FROM usuarios WHERE usuario = ?', (usuario,)).fetchone()
+        fila = repo.consultar_credenciales(conexion, (usuario,)).fetchone()
         salt = fila['salt'] if fila else '00' * 32
         calculado = generar_hash(password, salt, fila['iteraciones'] if fila else ITERACIONES)
         esperado = fila['password_hash'] if fila else '00' * 32
         if not hmac.compare_digest(calculado, esperado) or not fila or not fila['activo']:
             raise ValueError('Credenciales incorrectas o cuenta inactiva.')
-        cursor = conexion.execute('UPDATE usuarios SET ultimo_acceso = ? WHERE id_usuario = ? AND activo = 1 AND password_hash = ?',
-                                  (fecha_actual(), fila['id_usuario'], esperado))
+        cursor = repo.actualizar_acceso(conexion, (fecha_actual(), fila['id_usuario'], esperado))
         if cursor.rowcount != 1:
             raise ValueError('La cuenta cambio. Inicie sesion nuevamente.')
-        return dict(conexion.execute(f'SELECT {CAMPOS_PUBLICOS} FROM usuarios WHERE id_usuario = ?', (fila['id_usuario'],)).fetchone())
+        return dict(repo.consultar_usuario_publico(conexion, (fila['id_usuario'],)).fetchone())
 
 
 def _autorizar(conexion, id_usuario, roles=ROLES):
-    fila = conexion.execute(f'SELECT {CAMPOS_PUBLICOS} FROM usuarios WHERE id_usuario = ? AND activo = 1', (id_usuario,)).fetchone()
+    fila = repo.consultar_usuario_activo(conexion, (id_usuario,)).fetchone()
     if not fila or fila['rol'] not in roles:
         raise ValueError('Acceso no autorizado.')
     return dict(fila)
@@ -108,7 +105,7 @@ def verificar_permiso(id_usuario, roles=ROLES):
 
 def crear_usuario(id_admin, usuario, nombre, password, rol):
     with closing(conectar()) as conexion, conexion:
-        conexion.execute('BEGIN IMMEDIATE')
+        repo.iniciar_transaccion(conexion)
         _autorizar(conexion, id_admin, ('Administrador',))
         return _insertar(conexion, usuario, nombre, password, rol)
 
@@ -116,18 +113,18 @@ def crear_usuario(id_admin, usuario, nombre, password, rol):
 def listar_usuarios(id_admin):
     with closing(conectar()) as conexion:
         _autorizar(conexion, id_admin, ('Administrador',))
-        return [dict(f) for f in conexion.execute(f'SELECT {CAMPOS_PUBLICOS} FROM usuarios ORDER BY usuario')]
+        return [dict(f) for f in repo.consultar_usuarios_publicos(conexion)]
 
 
 def cambiar_estado(id_admin, id_objetivo, activo):
     if activo not in (0, 1):
         raise ValueError('Estado invalido.')
     with closing(conectar()) as conexion, conexion:
-        conexion.execute('BEGIN IMMEDIATE')
+        repo.iniciar_transaccion(conexion)
         _autorizar(conexion, id_admin, ('Administrador',))
         if id_admin == id_objetivo and not activo:
             raise ValueError('No puede desactivar su propia cuenta.')
-        cursor = conexion.execute('UPDATE usuarios SET activo = ? WHERE id_usuario = ?', (activo, id_objetivo))
+        cursor = repo.actualizar_estado_usuario(conexion, (activo, id_objetivo))
         if cursor.rowcount != 1:
             raise ValueError('Usuario inexistente.')
 
@@ -136,13 +133,13 @@ def cambiar_password(id_usuario, actual, nueva):
     nuevo_hash, salt = preparar_password(nueva)
     validar_password(actual)
     with closing(conectar()) as conexion, conexion:
-        conexion.execute('BEGIN IMMEDIATE')
+        repo.iniciar_transaccion(conexion)
         _autorizar(conexion, id_usuario)
-        fila = conexion.execute('SELECT * FROM usuarios WHERE id_usuario = ?', (id_usuario,)).fetchone()
+        fila = repo.consultar_usuario_id(conexion, (id_usuario,)).fetchone()
         calculado = generar_hash(actual, fila['salt'], fila['iteraciones'])
         if not hmac.compare_digest(calculado, fila['password_hash']):
             raise ValueError('Contrasena actual incorrecta.')
-        conexion.execute('UPDATE usuarios SET password_hash = ?, salt = ?, iteraciones = ? WHERE id_usuario = ?', (nuevo_hash, salt, ITERACIONES, id_usuario))
+        repo.actualizar_password(conexion, (nuevo_hash, salt, ITERACIONES, id_usuario))
 
 
 def pedir_password():

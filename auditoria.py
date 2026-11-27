@@ -1,4 +1,5 @@
 """Registro y consulta de operaciones del sistema."""
+import repositorios as repo
 import json
 import sqlite3
 from contextlib import closing
@@ -32,17 +33,11 @@ def registrar_auditoria(conexion, id_usuario, accion, modulo, descripcion,
         raise ValueError('Resultado invalido.')
     usuario = 'Sistema'
     if id_usuario is not None:
-        fila = conexion.execute('SELECT usuario FROM usuarios WHERE id_usuario = ?',
-                                (id_usuario,)).fetchone()
+        fila = repo.consultar_nombre_usuario(conexion, (id_usuario,)).fetchone()
         if fila is None:
             raise ValueError('Usuario inexistente.')
         usuario = fila['usuario']
-    cursor = conexion.execute('''INSERT INTO auditoria
-        (id_usuario, usuario, accion, modulo, descripcion, datos_anteriores,
-         datos_nuevos, fecha, resultado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (id_usuario, usuario, accion.strip(), modulo.strip(), descripcion.strip(),
-         serializar(anteriores), serializar(nuevos),
-         datetime.now().isoformat(sep=' ', timespec='seconds'), resultado))
+    cursor = repo.insertar_auditoria(conexion, (id_usuario, usuario, accion.strip(), modulo.strip(), descripcion.strip(), serializar(anteriores), serializar(nuevos), datetime.now().isoformat(sep=' ', timespec='seconds'), resultado))
     return cursor.lastrowid
 
 
@@ -59,8 +54,7 @@ def listar_auditoria(id_admin, limite=100):
     if type(limite) is not int or not 1 <= limite <= 1000:
         raise ValueError('Limite invalido.')
     with closing(conectar()) as conexion:
-        filas = conexion.execute('SELECT * FROM auditoria ORDER BY id_auditoria DESC LIMIT ?',
-                                 (limite,)).fetchall()
+        filas = repo.consultar_auditoria(conexion, (limite,)).fetchall()
         return [dict(fila) for fila in filas]
 
 

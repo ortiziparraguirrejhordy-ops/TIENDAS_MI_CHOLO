@@ -1,4 +1,5 @@
 
+import repositorios as repo
 import csv
 import sqlite3
 
@@ -174,22 +175,7 @@ def exportar_detalle_ventas():
 
     with closing(conectar()) as conexion:
 
-        registros = conexion.execute("""
-            SELECT
-                v.id_venta,
-                v.fecha,
-                p.codigo,
-                p.nombre,
-                d.cantidad,
-                d.precio_centavos,
-                d.subtotal_centavos
-            FROM detalle_venta AS d
-            INNER JOIN ventas AS v
-                ON d.id_venta = v.id_venta
-            INNER JOIN productos AS p
-                ON d.id_producto = p.id_producto
-            ORDER BY v.id_venta DESC, d.id_detalle
-        """).fetchall()
+        registros = repo.consultar_detalles_exportacion(conexion).fetchall()
 
     encabezados = [
         "ID de venta",

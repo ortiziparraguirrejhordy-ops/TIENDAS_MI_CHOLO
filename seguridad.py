@@ -1,3 +1,4 @@
+import repositorios as repo
 import sqlite3
 import logging
 from datetime import datetime
@@ -19,13 +20,13 @@ def registrar_error(error):
 
 
 def verificar_conexion(conexion):
-    resultados = conexion.execute('PRAGMA integrity_check').fetchall()
+    resultados = repo.consultar_integridad(conexion).fetchall()
     if [fila[0] for fila in resultados] != ['ok']:
         raise ValueError('La base de datos presenta problemas de integridad.')
-    if conexion.execute('PRAGMA foreign_key_check').fetchone() is not None:
+    if repo.consultar_claves_foraneas(conexion).fetchone() is not None:
         raise ValueError('Existen relaciones invalidas entre registros.')
     tablas = {'productos', 'ventas', 'detalle_venta', 'usuarios', 'auditoria'}
-    existentes = {fila[0] for fila in conexion.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    existentes = {fila[0] for fila in repo.consultar_tablas(conexion)}
     if not tablas.issubset(existentes):
         raise ValueError('La copia no contiene las tablas requeridas.')
     return True

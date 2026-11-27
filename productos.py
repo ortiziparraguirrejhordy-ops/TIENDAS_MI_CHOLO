@@ -1,4 +1,5 @@
 
+import repositorios as repo
 import sqlite3
 from usuarios import _autorizar
 from auditoria import registrar_auditoria
@@ -57,7 +58,7 @@ def crear_producto(codigo, nombre, categoria, precio, stock, id_usuario=None):
         with closing(conectar()) as conexion:
             with conexion:
 
-                conexion.execute("BEGIN IMMEDIATE")
+                repo.iniciar_transaccion(conexion)
                 _autorizar(conexion, id_usuario, ('Administrador',))
                 previo = consultar_producto(conexion, codigo)
                 cursor = insertar_producto(conexion, codigo, nombre, categoria, precio, stock)
@@ -96,7 +97,7 @@ def modificar_producto(
         with closing(conectar()) as conexion:
             with conexion:
 
-                conexion.execute("BEGIN IMMEDIATE")
+                repo.iniciar_transaccion(conexion)
                 _autorizar(conexion, id_usuario, ('Administrador',))
                 previo = consultar_producto(conexion, codigo_actual)
                 cursor = actualizar_producto(conexion, codigo_actual, codigo_nuevo, nombre, categoria, precio, stock)
@@ -125,7 +126,7 @@ def eliminar_producto(codigo, id_usuario=None):
     with closing(conectar()) as conexion:
         with conexion:
 
-            conexion.execute("BEGIN IMMEDIATE")
+            repo.iniciar_transaccion(conexion)
             _autorizar(conexion, id_usuario, ('Administrador',))
             previo = consultar_producto(conexion, codigo)
             cursor = actualizar_estado_producto(conexion, codigo, 0)
@@ -148,7 +149,7 @@ def restaurar_producto(codigo, id_usuario=None):
     with closing(conectar()) as conexion:
         with conexion:
 
-            conexion.execute("BEGIN IMMEDIATE")
+            repo.iniciar_transaccion(conexion)
             _autorizar(conexion, id_usuario, ('Administrador',))
             previo = consultar_producto(conexion, codigo)
             cursor = actualizar_estado_producto(conexion, codigo, 1)

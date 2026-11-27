@@ -1,4 +1,5 @@
 
+import repositorios as repo
 import sqlite3
 from usuarios import _autorizar
 from auditoria import registrar_auditoria
@@ -138,7 +139,7 @@ def registrar_venta(carrito, metodo_pago, id_usuario=None):
 
         with conexion:
 
-            conexion.execute("BEGIN IMMEDIATE")
+            repo.iniciar_transaccion(conexion)
             _autorizar(conexion, id_usuario, ("Administrador", "Vendedor"))
 
             detalles = []
@@ -152,11 +153,7 @@ def registrar_venta(carrito, metodo_pago, id_usuario=None):
                     item["cantidad"]
                 )
 
-                producto = conexion.execute("""
-                    SELECT * FROM productos
-                    WHERE codigo = ?
-                    AND activo = 1
-                """, (codigo,)).fetchone()
+                producto = repo.consultar_producto_activo(conexion, (codigo,)).fetchone()
 
                 if producto is None:
                     raise ValueError(
@@ -187,18 +184,7 @@ def registrar_venta(carrito, metodo_pago, id_usuario=None):
                     subtotal
                 ))
 
-            cursor = conexion.execute("""
-                INSERT INTO ventas (
-                    fecha,
-                    total_centavos,
-                    metodo_pago
-                )
-                VALUES (?, ?, ?)
-            """, (
-                fecha,
-                total,
-                metodo_pago
-            ))
+            cursor = repo.insertar_venta(conexion, (fecha, total, metodo_pago))
 
             id_venta = cursor.lastrowid
 
@@ -206,34 +192,9 @@ def registrar_venta(carrito, metodo_pago, id_usuario=None):
 
                 id_producto, cantidad, precio, subtotal = detalle
 
-                conexion.execute("""
-                    INSERT INTO detalle_venta (
-                        id_venta,
-                        id_producto,
-                        cantidad,
-                        precio_centavos,
-                        subtotal_centavos
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    id_venta,
-                    id_producto,
-                    cantidad,
-                    precio,
-                    subtotal
-                ))
+                repo.insertar_detalle_venta(conexion, (id_venta, id_producto, cantidad, precio, subtotal))
 
-                cursor_stock = conexion.execute("""
-                    UPDATE productos
-                    SET stock = stock - ?
-                    WHERE id_producto = ?
-                    AND stock >= ?
-                    AND activo = 1
-                """, (
-                    cantidad,
-                    id_producto,
-                    cantidad
-                ))
+                cursor_stock = repo.descontar_stock(conexion, (cantidad, id_producto, cantidad))
 
                 if cursor_stock.rowcount != 1:
                     raise ValueError(
@@ -252,11 +213,7 @@ def listar_ventas():
 
     with closing(conectar()) as conexion:
 
-        registros = conexion.execute("""
-            SELECT *
-            FROM ventas
-            ORDER BY id_venta DESC
-        """).fetchall()
+        registros = repo.consultar_ventas(conexion).fetchall()
 
         return [dict(registro) for registro in registros]
 
@@ -273,28 +230,12 @@ def obtener_detalle_venta(id_venta):
 
     with closing(conectar()) as conexion:
 
-        venta = conexion.execute("""
-            SELECT *
-            FROM ventas
-            WHERE id_venta = ?
-        """, (id_venta,)).fetchone()
+        venta = repo.consultar_venta(conexion, (id_venta,)).fetchone()
 
         if venta is None:
             raise ValueError("La venta no existe.")
 
-        detalles = conexion.execute("""
-            SELECT
-                p.codigo,
-                p.nombre,
-                d.cantidad,
-                d.precio_centavos,
-                d.subtotal_centavos
-            FROM detalle_venta AS d
-            INNER JOIN productos AS p
-                ON d.id_producto = p.id_producto
-            WHERE d.id_venta = ?
-            ORDER BY d.id_detalle
-        """, (id_venta,)).fetchall()
+        detalles = repo.consultar_detalles_venta(conexion, (id_venta,)).fetchall()
 
         return {
             "venta": dict(venta),

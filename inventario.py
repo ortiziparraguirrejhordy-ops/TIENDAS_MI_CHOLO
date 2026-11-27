@@ -1,4 +1,5 @@
 
+import repositorios as repo
 import sqlite3
 from datetime import datetime
 from contextlib import closing
@@ -85,36 +86,7 @@ def obtener_ingresos():
 
     with closing(conectar()) as conexion:
 
-        resultado = conexion.execute("""
-            SELECT
-                COUNT(*) AS total_ventas,
-
-                COALESCE(
-                    SUM(total_centavos), 0
-                ) AS ingresos_totales,
-
-                COALESCE(
-                    SUM(
-                        CASE
-                            WHEN substr(fecha, 1, 10) = ?
-                            THEN total_centavos
-                            ELSE 0
-                        END
-                    ), 0
-                ) AS ingresos_hoy,
-
-                COALESCE(
-                    SUM(
-                        CASE
-                            WHEN substr(fecha, 1, 7) = ?
-                            THEN total_centavos
-                            ELSE 0
-                        END
-                    ), 0
-                ) AS ingresos_mes
-
-            FROM ventas
-        """, (hoy, mes)).fetchone()
+        resultado = repo.consultar_ingresos(conexion, (hoy, mes)).fetchone()
 
         return dict(resultado)
 
@@ -124,18 +96,7 @@ def obtener_ingresos_por_pago():
 
     with closing(conectar()) as conexion:
 
-        registros = conexion.execute("""
-            SELECT
-                metodo_pago,
-                COUNT(*) AS cantidad_ventas,
-                SUM(total_centavos) AS ingresos
-
-            FROM ventas
-
-            GROUP BY metodo_pago
-
-            ORDER BY ingresos DESC
-        """).fetchall()
+        registros = repo.consultar_ingresos_pago(conexion).fetchall()
 
         return [dict(registro) for registro in registros]
 
@@ -145,27 +106,7 @@ def obtener_productos_mas_vendidos(limite=5):
 
     with closing(conectar()) as conexion:
 
-        registros = conexion.execute("""
-            SELECT
-                p.codigo,
-                p.nombre,
-
-                SUM(d.cantidad) AS unidades_vendidas,
-
-                SUM(d.subtotal_centavos) AS ingresos
-
-            FROM detalle_venta AS d
-
-            INNER JOIN productos AS p
-                ON d.id_producto = p.id_producto
-
-            GROUP BY p.id_producto, p.codigo, p.nombre
-
-            ORDER BY unidades_vendidas DESC,
-                     p.id_producto ASC
-
-            LIMIT ?
-        """, (limite,)).fetchall()
+        registros = repo.consultar_mas_vendidos(conexion, (limite,)).fetchall()
 
         return [dict(registro) for registro in registros]
 
