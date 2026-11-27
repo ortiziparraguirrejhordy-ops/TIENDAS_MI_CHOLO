@@ -42,6 +42,10 @@ from inventario import (
     STOCK_MINIMO
 )
 
+from usuarios import (autenticar, verificar_permiso, necesita_administrador,
+                      crear_primer_administrador, crear_usuario, listar_usuarios,
+                      cambiar_estado, cambiar_password)
+from auditoria import registrar_evento, listar_auditoria
 from validaciones import formatear_dinero
 from reportes import (
     exportar_productos, exportar_ventas, exportar_detalle_ventas,
@@ -86,9 +90,8 @@ class Aplicacion(tk.Tk):
         self.busqueda_pendiente = None
 
         self.configurar_estilos()
-        self.crear_estructura()
-
-        self.navegar("Inicio", self.mostrar_inicio)
+        self.sesion = None
+        self.mostrar_login()
 
         self.protocol("WM_DELETE_WINDOW", self.salir)
 
@@ -96,6 +99,191 @@ class Aplicacion(tk.Tk):
     # ======================================
     # ESTILOS
     # ======================================
+
+    def mostrar_login(self):
+        self.geometry("1000x650")
+        self.login = tk.Frame(self, bg=LATERAL)
+        self.login.pack(fill="both", expand=True)
+        panel = tk.Frame(self.login, bg=BLANCO, padx=48, pady=30)
+        panel.place(relx=.5, rely=.5, anchor="center")
+        inicial = necesita_administrador()
+        tk.Label(panel, text="TIENDAS MI CHOLO", bg=BLANCO, fg=TEXTO,
+                 font=("Segoe UI", 25, "bold")).pack(pady=(0, 10))
+        tk.Label(panel, text="Crear primer administrador" if inicial else "Iniciar sesion",
+                 bg=BLANCO, fg=GRIS, font=("Segoe UI", 13)).pack(pady=(0, 15))
+        campos = {}
+        nombres = ["Usuario", "Nombre completo", "Contrasena", "Repetir contrasena"] if inicial else ["Usuario", "Contrasena"]
+        for nombre in nombres:
+            tk.Label(panel, text=nombre, bg=BLANCO, fg=TEXTO).pack(anchor="w")
+            entrada = ttk.Entry(panel, width=36, show="*" if "contrasena" in nombre.lower() else "")
+            entrada.pack(fill="x", pady=(2, 9))
+            campos[nombre] = entrada
+        visible = tk.BooleanVar(value=False)
+        def mostrar_password():
+            for nombre, entrada in campos.items():
+                if "contrasena" in nombre.lower():
+                    entrada.configure(show="" if visible.get() else "*")
+        ttk.Checkbutton(panel, text="Mostrar contrasena", variable=visible,
+                        command=mostrar_password).pack(anchor="w")
+        def ingresar(event=None):
+            try:
+                usuario = campos["Usuario"].get()
+                password = campos["Contrasena"].get()
+                if inicial:
+                    if password != campos["Repetir contrasena"].get():
+                        raise ValueError("Las contrasenas no coinciden.")
+                    crear_primer_administrador(usuario, campos["Nombre completo"].get(), password)
+                sesion = autenticar(usuario, password)
+                registrar_evento(sesion["id_usuario"], "LOGIN", "Usuarios", "Inicio de sesion grafico")
+                self.sesion = sesion
+            except ERRORES as error:
+                messagebox.showerror("Acceso", str(error), parent=self)
+                return
+            self.login.destroy()
+            self.geometry("1200x750")
+            self.crear_estructura()
+            self.navegar("Inicio", self.mostrar_inicio)
+        self.boton(panel, "Crear administrador" if inicial else "Ingresar", ingresar).pack(fill="x", pady=(15, 0))
+        if not inicial:
+            self.boton(panel, "Crear cuenta", lambda: self.formulario_cuenta(True), LATERAL).pack(fill="x", pady=(8, 0))
+        for entrada in campos.values():
+            entrada.bind("<Return>", ingresar)
+        campos["Usuario"].focus_set()
+
+    def dialogo_cuenta(self, titulo, campos, guardar, rol=False):
+        ventana = tk.Toplevel(self)
+        ventana.title(titulo)
+        ventana.transient(self)
+        ventana.configure(bg=BLANCO)
+        panel = tk.Frame(ventana, bg=BLANCO, padx=24, pady=18)
+        panel.pack(fill="both", expand=True)
+        entradas = {}
+        for nombre, secreto in campos:
+            tk.Label(panel, text=nombre, bg=BLANCO, fg=TEXTO).pack(anchor="w")
+            entrada = ttk.Entry(panel, width=38, show="*" if secreto else "")
+            entrada.pack(fill="x", pady=(2, 7))
+            entradas[nombre] = entrada
+        if rol:
+            tk.Label(panel, text="Rol", bg=BLANCO).pack(anchor="w")
+            selector = ttk.Combobox(panel, values=("Vendedor", "Administrador"), state="readonly")
+            selector.set("Vendedor")
+            selector.pack(fill="x", pady=5)
+            entradas["Rol"] = selector
+        def aceptar():
+            try:
+                guardar({k: v.get() for k, v in entradas.items()})
+            except ERRORES as error:
+                messagebox.showerror("Usuarios", str(error), parent=ventana)
+                return
+            ventana.destroy()
+        self.boton(panel, "Guardar", aceptar).pack(fill="x", pady=(10, 4))
+        self.boton(panel, "Cancelar", ventana.destroy, GRIS).pack(fill="x")
+        ventana.grab_set()
+        next(iter(entradas.values())).focus_set()
+
+    def auditar_cuenta(self, actor, accion, descripcion, nuevos=None):
+        try:
+            registrar_evento(actor, accion, "Usuarios", descripcion, nuevos=nuevos)
+        except ERRORES as error:
+            messagebox.showwarning("Auditoria", "Cambio guardado, pero fallo la auditoria: " + str(error), parent=self)
+
+    def formulario_cuenta(self, desde_login=False):
+        if not desde_login and not self.permiso(True):
+            return
+        campos = [("Usuario administrador", False), ("Contrasena administrador", True)] if desde_login else []
+        campos += [("Usuario nuevo", False), ("Nombre completo", False), ("Contrasena nueva", True), ("Repetir contrasena", True)]
+        def guardar(datos):
+            if datos["Contrasena nueva"] != datos["Repetir contrasena"]:
+                raise ValueError("Las contrasenas no coinciden.")
+            actor = autenticar(datos["Usuario administrador"], datos["Contrasena administrador"]) if desde_login else self.sesion
+            verificar_permiso(actor["id_usuario"], ("Administrador",))
+            nuevo = crear_usuario(actor["id_usuario"], datos["Usuario nuevo"], datos["Nombre completo"], datos["Contrasena nueva"], datos["Rol"])
+            self.auditar_cuenta(actor["id_usuario"], "INSERTAR", "Cuenta creada", {"id_usuario": nuevo, "rol": datos["Rol"]})
+            messagebox.showinfo("Usuarios", "Cuenta creada correctamente.", parent=self)
+            if not desde_login:
+                self.mostrar_usuarios()
+        self.dialogo_cuenta("Crear cuenta", campos, guardar, rol=True)
+
+    def mostrar_usuarios(self):
+        if not self.permiso(True):
+            return
+        self.limpiar_contenido()
+        self.encabezado("Usuarios", "Administracion de cuentas y permisos")
+        barra = tk.Frame(self.contenido, bg=FONDO)
+        barra.pack(fill="x", pady=8)
+        self.boton(barra, "Crear cuenta", self.formulario_cuenta).pack(side="left", padx=4)
+        tabla = self.crear_tabla(("id", "usuario", "nombre", "rol", "estado"), ("ID", "Usuario", "Nombre", "Rol", "Estado"), (50, 120, 220, 120, 90))
+        for i, fila in enumerate(listar_usuarios(self.sesion["id_usuario"])):
+            self.insertar_fila(tabla, (fila["id_usuario"], fila["usuario"], fila["nombre_completo"], fila["rol"], "Activo" if fila["activo"] else "Inactivo"), i)
+        def estado(activo):
+            if not self.permiso(True):
+                return
+            valores = self.seleccionado(tabla)
+            if not valores:
+                return
+            if not messagebox.askyesno("Usuarios", "Cambiar estado de la cuenta seleccionada?", parent=self):
+                return
+            try:
+                objetivo = int(valores[0])
+                cambiar_estado(self.sesion["id_usuario"], objetivo, activo)
+                self.auditar_cuenta(self.sesion["id_usuario"], "MODIFICAR", "Estado de cuenta actualizado", {"id_usuario": objetivo, "activo": activo})
+                self.mostrar_usuarios()
+            except ERRORES as error:
+                messagebox.showerror("Usuarios", str(error), parent=self)
+        self.boton(barra, "Activar", lambda: estado(1), VERDE).pack(side="left", padx=4)
+        self.boton(barra, "Desactivar", lambda: estado(0), ROJO).pack(side="left", padx=4)
+
+    def formulario_password(self):
+        if not self.permiso():
+            return
+        def guardar(datos):
+            if datos["Contrasena nueva"] != datos["Repetir contrasena"]:
+                raise ValueError("Las contrasenas no coinciden.")
+            actor = self.sesion["id_usuario"]
+            cambiar_password(actor, datos["Contrasena actual"], datos["Contrasena nueva"])
+            self.auditar_cuenta(actor, "MODIFICAR", "Cambio de contrasena")
+            messagebox.showinfo("Usuarios", "Contrasena actualizada.", parent=self)
+        self.dialogo_cuenta("Cambiar contrasena", [("Contrasena actual", True), ("Contrasena nueva", True), ("Repetir contrasena", True)], guardar)
+
+    def es_admin(self):
+        return self.sesion is not None and self.sesion["rol"] == "Administrador"
+
+    def permiso(self, admin=False):
+        try:
+            if self.sesion is None:
+                raise ValueError("Inicie sesion.")
+            roles = ("Administrador",) if admin else ("Administrador", "Vendedor")
+            verificar_permiso(self.sesion["id_usuario"], roles)
+            return True
+        except ERRORES as error:
+            messagebox.showerror("Acceso", str(error), parent=self)
+            return False
+
+    def cerrar_sesion(self):
+        if not messagebox.askyesno("Cerrar sesion", "Cerrar sesion? El carrito pendiente se perdera.", parent=self):
+            return
+        try:
+            registrar_evento(self.sesion["id_usuario"], "LOGOUT", "Usuarios", "Cierre de sesion grafico")
+        except ERRORES as error:
+            messagebox.showwarning("Auditoria", str(error), parent=self)
+        self.cancelar_busqueda_pendiente()
+        self.carrito.clear()
+        self.botones_menu.clear()
+        self.lateral.destroy()
+        self.principal.destroy()
+        self.sesion = None
+        self.mostrar_login()
+
+    def mostrar_auditoria(self):
+        if not self.permiso(True):
+            return
+        self.limpiar_contenido()
+        self.encabezado("Auditoria", "Ultimos 100 eventos registrados")
+        tabla = self.crear_tabla(("fecha", "usuario", "accion", "modulo", "resultado", "descripcion"),
+            ("Fecha", "Usuario", "Accion", "Modulo", "Resultado", "Descripcion"),
+            (150, 90, 90, 90, 90, 240))
+        for i, fila in enumerate(listar_auditoria(self.sesion["id_usuario"])):
+            self.insertar_fila(tabla, tuple(fila[k] for k in ("fecha", "usuario", "accion", "modulo", "resultado", "descripcion")), i)
 
     def configurar_estilos(self):
 
@@ -177,6 +365,13 @@ class Aplicacion(tk.Tk):
             ("Seguridad", self.mostrar_seguridad)
         ]
 
+        if self.es_admin():
+            opciones.append(("Auditoria", self.mostrar_auditoria))
+            opciones.append(("Usuarios", self.mostrar_usuarios))
+        else:
+            opciones = [(n, f) for n, f in opciones if n not in ("Reportes", "Seguridad")]
+
+        opciones.append(("Mi contrasena", self.formulario_password))
         for nombre, funcion in opciones:
 
             boton = tk.Button(
@@ -191,7 +386,7 @@ class Aplicacion(tk.Tk):
                 font=("Segoe UI", 11),
                 anchor="w",
                 padx=20,
-                pady=12,
+                pady=7,
                 relief="flat",
                 cursor="hand2"
             )
@@ -202,8 +397,8 @@ class Aplicacion(tk.Tk):
 
         tk.Button(
             self.lateral,
-            text="Salir del sistema",
-            command=self.salir,
+            text="Cerrar sesion",
+            command=self.cerrar_sesion,
             bg=ROJO,
             fg=BLANCO,
             activebackground="#991B1B",
@@ -232,7 +427,7 @@ class Aplicacion(tk.Tk):
 
         self.estado = tk.Label(
             self.principal,
-            text="SQLite | Modo local | Version 1.0",
+            text=f"SQLite | {self.sesion['usuario']} | {self.sesion['rol']}",
             bg=BLANCO,
             fg=GRIS,
             anchor="w",
@@ -257,6 +452,8 @@ class Aplicacion(tk.Tk):
 
 
     def navegar(self, nombre, funcion):
+        if not self.permiso(nombre in ("Reportes", "Seguridad", "Auditoria", "Usuarios")):
+            return
 
         for boton in self.botones_menu.values():
             boton.configure(bg=LATERAL)
@@ -602,7 +799,7 @@ class Aplicacion(tk.Tk):
             ("Restaurar", self.reactivar_producto, NARANJA)
         ]
 
-        for texto, funcion, color in opciones:
+        for texto, funcion, color in (opciones if self.es_admin() else []):
 
             self.boton(
                 herramientas,
@@ -806,6 +1003,8 @@ class Aplicacion(tk.Tk):
 
 
     def formulario_producto(self, producto=None):
+        if not self.permiso(True):
+            return
 
         ventana = tk.Toplevel(self)
 
@@ -989,6 +1188,8 @@ class Aplicacion(tk.Tk):
 
 
     def editar_producto(self):
+        if not self.permiso(True):
+            return
 
         valores = self.seleccionado(
             self.tabla_productos
@@ -1015,6 +1216,8 @@ class Aplicacion(tk.Tk):
 
 
     def desactivar_producto(self):
+        if not self.permiso(True):
+            return
 
         valores = self.seleccionado(
             self.tabla_productos
@@ -1048,6 +1251,8 @@ class Aplicacion(tk.Tk):
 
 
     def reactivar_producto(self):
+        if not self.permiso(True):
+            return
 
         valores = self.seleccionado(
             self.tabla_productos
@@ -1378,6 +1583,8 @@ class Aplicacion(tk.Tk):
 
 
     def confirmar_venta(self):
+        if not self.permiso():
+            return
 
         if not self.carrito:
 
@@ -1874,6 +2081,8 @@ class Aplicacion(tk.Tk):
     # ======================================
 
     def mostrar_reportes(self):
+        if not self.permiso(True):
+            return
 
         self.limpiar_contenido()
 
@@ -1995,6 +2204,8 @@ class Aplicacion(tk.Tk):
 
 
     def generar_reporte_csv(self, funcion):
+        if not self.permiso(True):
+            return
         try:
             resultado = funcion()
             archivos = resultado if isinstance(resultado, list) else [resultado]
@@ -2004,6 +2215,8 @@ class Aplicacion(tk.Tk):
             messagebox.showerror("Error de exportacion", str(error), parent=self)
 
     def abrir_carpeta_reportes(self):
+        if not self.permiso(True):
+            return
         try:
             CARPETA_REPORTES.mkdir(parents=True, exist_ok=True)
             if sys.platform == "win32":
@@ -2021,6 +2234,8 @@ class Aplicacion(tk.Tk):
     # ======================================
 
     def mostrar_seguridad(self):
+        if not self.permiso(True):
+            return
 
         self.limpiar_contenido()
 
