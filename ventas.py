@@ -121,9 +121,11 @@ def mostrar_carrito(carrito):
         formatear_dinero(calcular_total(carrito))
     )
 
-
 def registrar_venta(carrito, metodo_pago, id_usuario=None):
     """Registra una venta y actualiza el inventario."""
+
+    if not isinstance(carrito, dict):
+        raise ValueError("El carrito debe ser un diccionario.")
 
     if not carrito:
         raise ValueError("No se puede registrar una venta vacia.")
