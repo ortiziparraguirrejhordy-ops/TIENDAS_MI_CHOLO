@@ -47,6 +47,9 @@ def obtener_producto(codigo):
 def crear_producto(codigo, nombre, categoria, precio, stock, id_usuario=None):
     """Registra un nuevo producto en la base de datos."""
 
+    if any(dato is None for dato in (codigo, nombre, categoria, precio, stock)):
+        raise ValueError("Los campos del producto son obligatorios.")
+
     codigo = validar_codigo(codigo)
     nombre = validar_nombre(nombre)
     categoria = validar_categoria(categoria)
